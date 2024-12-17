@@ -1,0 +1,1 @@
+python rgbd_detect_3d_dir.py --flip -bbmt 200 --namespace orbbec --max_distance 2.5 -sixdrep
