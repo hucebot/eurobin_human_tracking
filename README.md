@@ -2,7 +2,7 @@
 
 Human tracking pipeline used in euROBIN system as described in XXX.
 
-## Description
+## Description
 
 The pipeline consists of the following main components :
 - Human detection
@@ -13,7 +13,7 @@ The pipeline consists of the following main components :
 ## Installation
 How to install with docker
 
-## ROS Interface
+## ROS Interface
 Input / output topics and format
 
 ## Options
