@@ -1,7 +1,9 @@
 # euROBIN Human Tracking
+
 Human tracking pipeline used in euROBIN system as described in XXX.
 
 ## Description
+
 The pipeline consists of the following main components :
 - Human detection
 - Human tracking
