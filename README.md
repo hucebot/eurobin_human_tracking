@@ -31,7 +31,7 @@ Input / output topics and format
 ## Options
 Flags to run with options
 
-## Acknoledgments
+## Acknowledgments
 MMDet, MMPose, 6DRepNet...
 
 
@@ -44,3 +44,4 @@ MMDet, MMPose, 6DRepNet...
 - Add ROS interface description
 - Add illustration
 - Add instructions and `requirements.txt` for local installation
+- Add links and citations in Acknowledgments section
