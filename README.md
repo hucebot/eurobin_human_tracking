@@ -15,9 +15,10 @@ The pipeline consists of the following main components :
 ## Installation
 How to install with docker and launch interactively
 
+- Get the appropriate cuda keyring file (`cuda-keyring_1.0-1_all.deb`) that may be required to build the docker from [nvidia](https://developer.download.nvidia.com/compute/cuda/repos), optionally you can try without it by commenting the corresponding lines in `Dockerfile`
+
 - Download models and place them in `./models/`
 ```
-mkdir models
 wget https://download.openmmlab.com/mmdetection/v2.0/yolo/yolov3_d53_320_273e_coco/yolov3_d53_320_273e_coco-421362b6.pth
 mv yolov3_d53_320_273e_coco-421362b6.pth models/
 ```
