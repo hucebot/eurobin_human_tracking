@@ -2,6 +2,8 @@
 
 Human tracking pipeline used in euROBIN system as described in XXX.
 
+![Pipeline visu](images/eurobin_pipeline_gif.gif)
+
 ## Description
 
 The pipeline consists of the following main components :
@@ -13,6 +15,17 @@ The pipeline consists of the following main components :
 ## Installation
 How to install with docker and launch interactively
 
+- Download models and place them in `./models/`
+```
+mkdir models
+wget https://download.openmmlab.com/mmdetection/v2.0/yolo/yolov3_d53_320_273e_coco/yolov3_d53_320_273e_coco-421362b6.pth
+mv yolov3_d53_320_273e_coco-421362b6.pth models/
+```
+
+Go to : [Onedrive](https://1drv.ms/u/s!AimBgYV7JjTlgccifT1XlGRatxg3vw?e=9wz7BY) and download the model then put in under `models/vitpose_small.pth`
+
+The 6DRepNet models (face detection and 6D pose estimation) are already in `/models` (downloaded from [SixDRepNet/weights](https://github.com/jahongir7174/SixDRepNet/tree/master/weights))
+
 - Build docker
 
 ```bash
@@ -23,6 +36,12 @@ docker build -t inria_docker:rgbd_detect .
 
 ```bash
 sh launch.sh
+```
+
+- Launch the pipeline
+
+```bash
+python rgbd_detect_3d_dir.py -sixdrep
 ```
 
 ## ROS Interface
@@ -47,16 +66,13 @@ See `python rgbd_detect_3d_dir.py -h`
 Use `export VERBOSE=0` to set minimal verbosity (warnings, debug, errors and success). Level 1 adds info and 2 adds timing info.
 
 ## Acknowledgments
-MMDet, MMPose, 6DRepNet...
+The implementation is based on the following implementations of human detection and tracking, human pose estimation and 6D Head Pose estimation
 
+- [ViTPose](https://github.com/ViTAE-Transformer/ViTPose)
+- [MMDetection](https://github.com/open-mmlab/mmdetection)
+- [MMPose](https://github.com/open-mmlab/mmpose)
+- [6DRepNet](https://github.com/thohemp/6DRepNet) and [SixDRepNet](https://github.com/jahongir7174/SixDRepNet)
 
 ## TODO
-- Clean the code of unnecesary options (keep only sixdrep)
-- Remove unecessary dependencies
-- Keep only rgbd_detect_3d_dir.py
-- Add models in external links, LFS or directly from their source in the corresponding repos
 - Add a description of all options
-- Add ROS interface description
-- Add illustration
 - Add instructions and `requirements.txt` for local installation
-- Add links and citations in Acknowledgments section

@@ -1,8 +1,6 @@
 *.pyc
 *.pth
-*.pt
 *.zip
 *.deb
 *.bin
-*.onnx
 output/
