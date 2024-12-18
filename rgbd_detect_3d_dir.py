@@ -356,7 +356,7 @@ class InferenceNodeRGBD(object):
                         )
 
     @timeit           
-    def plot_xyxy_person_bbox(self, idx, bbox, array_shape, track, poses_torso = None):
+    def plot_xyxy_person_bbox(self, idx, bbox, array_shape, track, poses_torso = None, attention_score = None):
         """ Plot the bounding box of detected humans with associated informations
 
         Args:
@@ -365,6 +365,7 @@ class InferenceNodeRGBD(object):
             array_shape (np.array or list): array describing the output image width and height
             track (dict): current track (human) information, may include gaze orientation information
             poses_torso (np.ndarray, optional): position of the body center in camera frame. Defaults to None.
+            attention_score (float): score between 0 and 1 indicating the person is looking at the camera
         """
         bbox_ints = [
             int(bbox[0]),
@@ -372,6 +373,12 @@ class InferenceNodeRGBD(object):
             int(bbox[2]),
             int(bbox[3]),
         ]
+        
+        if attention_score is None:
+            attention_score = 0
+        else:
+            attention_score = int(attention_score * 100)
+        
         pt1 = (
             min(max(0, bbox_ints[0]), array_shape[1]),
             min(max(0, bbox_ints[1]), array_shape[0]),
@@ -416,24 +423,7 @@ class InferenceNodeRGBD(object):
                 pose_body_n = ["Unk", "Unk", "Unk"]
         else:
             pose_body_n = ["Unk", "Unk", "Unk"]
-            
-        # attention
-        heat_count = 0
-        history = 20
-        length = min(len(track["depth_face"]), history)
-        for i in range(length):
-            index = len(track["depth_face"]) - i - 1
-            yaw = np.rad2deg(track["gaze_yaw_rad"][index])
-            pitch = np.rad2deg(track["gaze_pitch_rad"][index])
-            depth = track["depth_face"][index]
-                        
-            thresh = (int(depth / 1000) + 1) * 6 # 6 deg per meter # TODO : set attention condition somewhere else
-            if np.abs(yaw) < thresh and pitch < 0:
-                # assume we are looking down
-                heat_count += 1
-        
-        attention_score = int( min((heat_count * 2 / history), 1) * 100)
-        
+                    
         draw_bbox_with_corners(self.vis_img, bbox_ints, color = color_tuple, thickness = 5, proportion = 0.2)
         
         text = "ID : {} | Person : {}% | Attention : {}%".format(idx, score, attention_score)
@@ -790,13 +780,14 @@ class InferenceNodeRGBD(object):
         cv2.circle(self.vis_img, head_center, 5, color = color_tuple, thickness=-1)        
 
     @timeit
-    def plot_overlay_face_attention_6d(self, track, head_bbox, keypoints):
+    def plot_overlay_face_attention_6d(self, track, head_bbox, keypoints, attention_score = 0):
         """ Plot ellipse around the eyes, colored depending on the attention of the person
 
         Args:
             track (dict): information oin the current track including yaw and pitch of gaze in the last frames
             head_bbox (np.array): array of size [4] or [5] with bounding box as [x_min, y_min, x_max, y_max, (score)]
             keypoints (np.ndarray): array of shape [17,3] with the body keypoints 
+            attention_score (float): score between 0 and 1 indicating if the person is looking at the camera
         """
         x_min, y_min, x_max, y_max = map(int, head_bbox[:4])
         
@@ -804,19 +795,19 @@ class InferenceNodeRGBD(object):
         valid_yaws = []
         valid_pitchs = []
         
-        heat_count = 0
-        history = 20
-        length = min(len(track["depth_face"]), history)
-        for i in range(length):
-            index = len(track["depth_face"]) - i - 1
-            yaw = np.rad2deg(track["gaze_yaw_rad"][index])
-            pitch = np.rad2deg(track["gaze_pitch_rad"][index])
-            depth = track["depth_face"][index]
+        # heat_count = 0
+        # history = 20
+        # length = min(len(track["depth_face"]), history)
+        # for i in range(length):
+        #     index = len(track["depth_face"]) - i - 1
+        #     yaw = np.rad2deg(track["gaze_yaw_rad"][index])
+        #     pitch = np.rad2deg(track["gaze_pitch_rad"][index])
+        #     depth = track["depth_face"][index]
                         
-            thresh = (int(depth / 1000) + 1) * 5 # 5 deg per meter
-            if np.abs(yaw) < thresh and pitch < 0:
-                heat_count += 1
-                # suppose we are looking down
+        #     thresh = (int(depth / 1000) + 1) * 5 # 5 deg per meter
+        #     if np.abs(yaw) < thresh and pitch < 0:
+        #         heat_count += 1
+        #         # suppose we are looking down
 
         
         overlay_img = self.vis_img.copy()
@@ -825,8 +816,9 @@ class InferenceNodeRGBD(object):
         leye = keypoints[1,:2]
         reye = keypoints[2,:2]
 
-        colorval = min(((heat_count * 2) / history), 1.0)
-        strength = 0.5 + (heat_count / history) * 0.5 #(heat_count / history)
+        colorval = min(attention_score * 2, 1.0) # color at max with 50%
+        strength = 0.5 + (attention_score) * 0.5
+        
         cmap = get_mpl_colormap("Reds")
         color = (cmap[int(colorval * 255)] * 255)
         color_tuple = (int(color[0]), int(color[1]), int(color[2])) 
@@ -839,7 +831,62 @@ class InferenceNodeRGBD(object):
             cv2.ellipse(overlay_img, ellipse_center, (ellipse_width, ellipse_height), 0, 0, 360, color_tuple, 3)
         
         self.vis_img = cv2.addWeighted(self.vis_img,(1-strength),overlay_img,strength,0)
-         
+        
+    def get_depth_face(self, keypoints, depth_array):
+        """ Get depth of face from the median of 3 keypoints
+
+        Args:
+            keypoints (np.ndarray): array of shape [17,3] with the body keypoints 
+            depth_array (np.ndarray): depth image array (in mm)
+        """
+        
+        nose = keypoints[0,:2].astype(np.uint32)
+        leye = keypoints[1,:2].astype(np.uint32)
+        reye = keypoints[2,:2].astype(np.uint32)
+        
+        depth_nose = depth_array[np.clip(nose[1], 0, depth_array.shape[0] - 1), np.clip(nose[0], 0, depth_array.shape[1] - 1)]
+        depth_leye = depth_array[np.clip(leye[1], 0, depth_array.shape[0] - 1), np.clip(leye[0], 0, depth_array.shape[1] - 1)]
+        depth_reye = depth_array[np.clip(reye[1], 0, depth_array.shape[0] - 1), np.clip(reye[0], 0, depth_array.shape[1] - 1)]
+                                                
+        depth_face = np.median([depth_nose, depth_leye, depth_reye])
+        
+        return depth_face
+    
+    def get_attention_score_from_track(self, track):
+        """ Compute an attention score from the history of gaze angle. Compute the percentage of frames meeting the condition (+- 10 deg yaw and pitch in -10-0 deg, ie looking down).
+
+        Args:
+            track (dict): informations about the tracked face, depth, yaw and pitch
+
+        Returns:
+            float: attention score between 0 and 1
+        """
+        
+        heat_count = 0
+        history = self.args.fps # 1 sec history (if all frames)
+        length = min(len(track["depth_face"]), history)
+        
+        if length < 5:
+            # too short to estimate
+            attention_score = 0
+        else:        
+            for i in range(length):
+                index = len(track["depth_face"]) - i - 1
+                yaw = np.rad2deg(track["gaze_yaw_rad"][index])
+                pitch = np.rad2deg(track["gaze_pitch_rad"][index])
+                depth = track["depth_face"][index]
+                            
+                thresh = 10 #(int(depth / 1000) + 1) * 6 # 6 deg per meter
+                thresh_wide = 20
+                if np.abs(yaw) < thresh and pitch < 0 and pitch > -10:
+                    heat_count += 1
+                elif np.abs(yaw) < thresh_wide and pitch < 5 and pitch > -15:
+                    # still count this
+                    heat_count += 0.5
+            
+            attention_score = (heat_count / history)
+        
+        return attention_score
 
     def start(self):
 
@@ -964,10 +1011,6 @@ class InferenceNodeRGBD(object):
                             self.tracks[idx] = {}
                             self.tracks[idx]["last_seen"] = image_count
                             self.tracks[idx]["keypoints_2d"] = []
-                            self.tracks[idx]["images_crop"] = []
-                            self.tracks[idx]["head_masks"] = []
-                            self.tracks[idx]["norm_body_centers"] = []
-                            self.tracks[idx]["bboxes"] = []
                             self.tracks[idx]["depth_face"] = []
                             self.tracks[idx]["gaze_yaw_rad"] = []
                             self.tracks[idx]["gaze_pitch_rad"] = []
@@ -975,7 +1018,6 @@ class InferenceNodeRGBD(object):
                         # add keypoint to the current track
                         self.tracks[idx]["last_seen"] = image_count
                         self.tracks[idx]["keypoints_2d"].append(keypoints)
-                        self.tracks[idx]["bboxes"].append(bbox)
                         
                         self.tracks_in_current_image[idx] = {
                             "right_wrist_depth": None,
@@ -988,6 +1030,7 @@ class InferenceNodeRGBD(object):
                             "depth_face": None,
                             "gaze_yaw_rad": None,
                             "gaze_pitch_rad": None,
+                            "attention_score": None,
                         }
 
                         if self.args.use_six_d_rep:
@@ -1019,8 +1062,8 @@ class InferenceNodeRGBD(object):
                                         face_bboxes[:,3] += y_min
                                         if face_bboxes.shape[0] > 1:
                                             prWarning("More than one face detected in the bounding box of track {}, only using first detection !".format(idx))
-                                        elif face_bboxes.shape[0] == 1:
-                                            draw_bbox_with_corners(self.vis_img, face_bboxes[0,:])
+                                        # elif face_bboxes.shape[0] == 1:
+                                        #     draw_bbox_with_corners(self.vis_img, face_bboxes[0,:], color = (128,128,128))
                                     else:
                                         face_bboxes = np.asarray([])
                                 else:
@@ -1073,50 +1116,36 @@ class InferenceNodeRGBD(object):
                                         self.tracks[idx]["gaze_yaw_rad"].append(np.deg2rad(y_output.item()))
                                            
                                         self.plot_gaze_from_pitch_yaw(np.deg2rad(y_output.item()), np.deg2rad(p_output.item()), head_bb, idx, keypoints) # invert pitch compared to resnet
-                                        # self.plot_gaze_angle_info(y_output.item(), p_output.item(), head_bb, idx) # invert pitch compared to resnet
-                                                                            
-                                        # get face depth
-                                        nose = keypoints[0,:2].astype(np.uint32)
-                                        leye = keypoints[1,:2].astype(np.uint32)
-                                        reye = keypoints[2,:2].astype(np.uint32)
                                         
-                                        depth_nose = depth_array[np.clip(nose[1], 0, depth_array.shape[0] - 1), np.clip(nose[0], 0, depth_array.shape[1] - 1)]
-                                        depth_leye = depth_array[np.clip(leye[1], 0, depth_array.shape[0] - 1), np.clip(leye[0], 0, depth_array.shape[1] - 1)]
-                                        depth_reye = depth_array[np.clip(reye[1], 0, depth_array.shape[0] - 1), np.clip(reye[0], 0, depth_array.shape[1] - 1)]
-                                                                                
-                                        depth_face = np.median([depth_nose, depth_leye, depth_reye])
+                                        # get face depth
+                                        depth_face = self.get_depth_face(keypoints, depth_array)
                                                                                 
                                         self.tracks_in_current_image[idx]["depth_face"] = depth_face
                                         self.tracks[idx]["depth_face"].append(depth_face)
                                                                                 
-                                        self.plot_overlay_face_attention_6d(self.tracks[idx], face_bboxes[0,:4], keypoints)
-                                    else:
-                                        self.tracks[idx]["gaze_pitch_rad"].append(np.deg2rad(180))
-                                        self.tracks[idx]["gaze_yaw_rad"].append(np.deg2rad(180))
+                                        attention_score = self.get_attention_score_from_track(self.tracks[idx])        
+                                        self.tracks_in_current_image[idx]["attention_score"] = attention_score
+                                        attentive = (attention_score > self.args.attention_score_threshold)
                                         
-                                        nose = keypoints[0,:2].astype(np.uint32)
-                                        leye = keypoints[1,:2].astype(np.uint32)
-                                        reye = keypoints[2,:2].astype(np.uint32)
-                            
-                                        depth_nose = depth_array[np.clip(nose[1], 0, depth_array.shape[0] - 1), np.clip(nose[0], 0, depth_array.shape[1] - 1)]
-                                        depth_leye = depth_array[np.clip(leye[1], 0, depth_array.shape[0] - 1), np.clip(leye[0], 0, depth_array.shape[1] - 1)]
-                                        depth_reye = depth_array[np.clip(reye[1], 0, depth_array.shape[0] - 1), np.clip(reye[0], 0, depth_array.shape[1] - 1)]
-                                        depth_face = np.median([depth_nose, depth_leye, depth_reye])
+                                        if attentive:
+                                            draw_bbox_with_corners(self.vis_img, face_bboxes[0,:])
+                                        else:
+                                            draw_bbox_with_corners(self.vis_img, face_bboxes[0,:], color = (128,128,128))   
+                                                                        
+                                        self.plot_overlay_face_attention_6d(self.tracks[idx], face_bboxes[0,:4], keypoints, attention_score = attention_score)
+                                    else:
+                                        self.tracks[idx]["gaze_pitch_rad"].append(np.deg2rad(180)) # if the image is too small consider that the human is facing away
+                                        self.tracks[idx]["gaze_yaw_rad"].append(np.deg2rad(180)) # if the image is too small consider that the human is facing away
+                                        
+                                        depth_face = self.get_depth_face(keypoints, depth_array)
 
                                         self.tracks[idx]["depth_face"].append(depth_face)
                                 
                                 else:
-                                    self.tracks[idx]["gaze_pitch_rad"].append(np.deg2rad(180))
-                                    self.tracks[idx]["gaze_yaw_rad"].append(np.deg2rad(180))
+                                    self.tracks[idx]["gaze_pitch_rad"].append(np.deg2rad(180)) # if not rougly facing the camera consider that the human is facing away
+                                    self.tracks[idx]["gaze_yaw_rad"].append(np.deg2rad(180)) # if not rougly facing the camera consider that the human is facing away
                                     
-                                    nose = keypoints[0,:2].astype(np.uint32)
-                                    leye = keypoints[1,:2].astype(np.uint32)
-                                    reye = keypoints[2,:2].astype(np.uint32)
-                        
-                                    depth_nose = depth_array[np.clip(nose[1], 0, depth_array.shape[0] - 1), np.clip(nose[0], 0, depth_array.shape[1] - 1)]
-                                    depth_leye = depth_array[np.clip(leye[1], 0, depth_array.shape[0] - 1), np.clip(leye[0], 0, depth_array.shape[1] - 1)]
-                                    depth_reye = depth_array[np.clip(reye[1], 0, depth_array.shape[0] - 1), np.clip(reye[0], 0, depth_array.shape[1] - 1)]
-                                    depth_face = np.median([depth_nose, depth_leye, depth_reye])
+                                    depth_face = self.get_depth_face(keypoints, depth_array)
 
                                     self.tracks[idx]["depth_face"].append(depth_face)
                     
@@ -1124,9 +1153,6 @@ class InferenceNodeRGBD(object):
                         bbox[4] *= 100 # score percentage
                         bbox = bbox.astype(np.int32)
                         
-                        if not self.args.no_show:
-                            self.plot_xyxy_person_bbox(idx, bbox, depth_array.shape, self.tracks[idx])
-
                         # return the list of body center joints and also fill self.tracks_in_current_image[idx]
                         body_center_joints = self.process_keypoints(keypoints, depth_array, idx)
 
@@ -1145,7 +1171,7 @@ class InferenceNodeRGBD(object):
 
                             # redraw bb with more info
                             if not self.args.no_show:
-                                self.plot_xyxy_person_bbox(idx, bbox, depth_array.shape, self.tracks[idx], poses_torso)
+                                self.plot_xyxy_person_bbox(idx, bbox, depth_array.shape, self.tracks[idx], poses_torso, attention_score = self.tracks_in_current_image[idx]["attention_score"])
 
                             if len(depths_torso) > 3:
                                 # at least 4 points to average decently
@@ -1174,6 +1200,9 @@ class InferenceNodeRGBD(object):
                                     idx
                                 )
                             )
+                            if not self.args.no_show:
+                                self.plot_xyxy_person_bbox(idx, bbox, depth_array.shape, self.tracks[idx], attention_score = self.tracks_in_current_image[idx]["attention_score"])
+
 
                         # draw skeleton
                         if not self.args.no_show:
@@ -1184,7 +1213,16 @@ class InferenceNodeRGBD(object):
                     for idx, track_info in self.tracks_in_current_image.items():
                         depth = track_info["depth_center"]
                         if depth is not None:
-                            if depth < min_depth:
+                            if self.args.use_six_d_rep:
+                                attention_score = track_info["attention_score"]
+                                if attention_score is not None:
+                                    attentive = (attention_score > self.args.attention_score_threshold)
+                                else:
+                                    attentive = False
+                            else:
+                                attentive = True
+                                
+                            if depth < min_depth and attentive:
                                 min_depth = depth
                                 min_depth_idx = idx
 
@@ -1196,7 +1234,8 @@ class InferenceNodeRGBD(object):
                         if yaw_closest_gaze is None:
                             yaw_closest = np.deg2rad(-180.0)
                         else:
-                            yaw_closest = yaw_closest_gaze
+                            yaw_closest = yaw_closest_gaze # unused yet, to be send as person yaw ?
+                            
                         prInfo(
                             "Using track {} as it is the closest".format(min_depth_idx)
                         )
@@ -1226,17 +1265,17 @@ class InferenceNodeRGBD(object):
                         tf_msg.transform.rotation.z = qz
                         tf_msg.transform.rotation.w = qw
 
-
                         dist = np.sqrt(
                             tf_msg.transform.translation.x**2 + tf_msg.transform.translation.y**2 + tf_msg.transform.translation.z**2
                         )
 
                         prSuccess(
-                            "Publishing coordinates {:.2f} {:.2f} {:.2f} and yaw {:.2f}".format(
-                                pose_closest[0], pose_closest[1], pose_closest[2], np.rad2deg(yaw_closest)
+                            "Publishing coordinates {:.2f} {:.2f} {:.2f}".format(
+                                pose_closest[0], pose_closest[1], pose_closest[2]
                             )
                         )
 
+                        self.goal_pub.publish(tf_msg)
                         self.tf_br.sendTransform(tf_msg)
 
                         if not self.args.no_show:
@@ -1430,6 +1469,13 @@ if __name__ == "__main__":
         type=str,
         default="./models/sixdrep_detection.onnx",
         help="Checkpoint file for detection | default = %(default)s",
+    )
+    parser.add_argument(
+        "--attention_score_threshold",
+        "-ast", 
+        type=float, 
+        default=0.3, 
+        help="Attention score threshold for a track to be considered"
     )
     parser.add_argument(
         "--bb_min_threshold",
