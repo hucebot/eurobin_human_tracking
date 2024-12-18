@@ -28,8 +28,23 @@ sh launch.sh
 ## ROS Interface
 Input / output topics and format
 
+Input topics : 
+- `[namespace]/rgb` : `Ìmage` message (`bgr8` format)
+- `[namespace]/depth` : `Image` message (`mono16` format)
+- `[namespace]/pcl` : `PointCloud2` message (`.data` buffer is expected to contain 3 or 6 fields of `float32` such that it can be reshaped to a numpy array of size `[image_height, image_width, n_fields]` that offers pixel correspondance with the `rgb` and `depth` image)
+
+Output topics :
+- `[namespace]/human` : `TransformStamped` message with detected human position
+
+Output tf :
+- `TransformStamped` with child frame id `[namespace]/human`
+
 ## Options
 Flags to run with options
+
+See `python rgbd_detect_3d_dir.py -h`
+
+Use `export VERBOSE=0` to set minimal verbosity (warnings, debug, errors and success). Level 1 adds info and 2 adds timing info.
 
 ## Acknowledgments
 MMDet, MMPose, 6DRepNet...

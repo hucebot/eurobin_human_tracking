@@ -1,6 +1,17 @@
 #!/usr/bin/env python
 # -*- encoding: utf-8 -*-
 import os
+
+key = 'VERBOSE'
+VERBOSITY = os.getenv(key) 
+# 0 = only warnings, errors, success and debug, 1 = + info, 2 = + timer
+if VERBOSITY is not None:
+  VERBOSITY = int(VERBOSITY)
+else:
+  VERBOSITY = 2
+
+print("Set verbosity level to : ", VERBOSITY)
+
 import numpy as np
 import matplotlib.pyplot as plt
 from print_color import print
@@ -28,13 +39,16 @@ def prSuccess(text):
   print(text, tag = "ok", tag_color = "green", color = "white")
 
 def prInfo(text):
-  print(text, tag = "info", tag_color = "cyan", color = "white")
+  if VERBOSITY >= 1:
+    print(text, tag = "info", tag_color = "cyan", color = "white")
 
 def prTimer(text, tic, tac):
-  print("{} {:.0f} ms".format(text, (tac-tic)*1000), tag = "timer", tag_color = "purple", color = "white")
+  if VERBOSITY >= 2:
+    print("{} {:.0f} ms".format(text, (tac-tic)*1000), tag = "timer", tag_color = "purple", color = "white")
 
 def prInfoBold(text):
-  print(text, tag = "info", tag_color = "cyan", color = "white", format = "bold")
+  if VERBOSITY >= 1:
+    print(text, tag = "info", tag_color = "cyan", color = "white", format = "bold")
 
 def prDebug(text):
   print(text, tag = "debug", tag_color = "red", background = "white", color = "white")
@@ -496,6 +510,7 @@ def timeit(func):
         tic = time.time()
         res = func(*args,  **kwargs) 
         tac = time.time()
-        print("{} {:.0f} ms".format(func.__name__, (tac-tic)*1000), tag = "timer", tag_color = "purple", color = "white")
+        if VERBOSITY >= 2:
+          print("{} {:.0f} ms".format(func.__name__, (tac-tic)*1000), tag = "timer", tag_color = "purple", color = "white")
         return res
     return wrapper_function 
